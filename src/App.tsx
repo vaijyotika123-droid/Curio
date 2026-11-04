@@ -1,43 +1,33 @@
-import { useEffect, useState } from 'react'
-import { supabase } from './lib/supabase'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider } from './contexts/AuthContext'
+import { ProtectedRoute, PublicOnlyRoute } from './components/ProtectedRoute'
+import { Login } from './pages/Login'
+import { Signup } from './pages/Signup'
+import { Library } from './pages/Library'
 import './App.css'
 
 function App() {
-  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'success' | 'error'>('checking')
-  const [statusMessage, setStatusMessage] = useState<string>('Testing connection to Supabase...')
-
-  useEffect(() => {
-    async function testSupabaseConnection() {
-      try {
-        const { error } = await supabase.auth.getSession()
-        
-        if (error) {
-          setConnectionStatus('error')
-          setStatusMessage(`Connection failed: ${error.message}`)
-        } else {
-          setConnectionStatus('success')
-          setStatusMessage('Successfully connected to Supabase!')
-        }
-      } catch (err: unknown) {
-        setConnectionStatus('error')
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-        setStatusMessage(`Unexpected error: ${errorMessage}`)
-      }
-    }
-
-    testSupabaseConnection()
-  }, [])
-
   return (
-    <main className="container">
-      <h1>Curio</h1>
-      <p className="tagline">From scattered curiosity to connected understanding.</p>
-      <p className="welcome">Your space to explore, understand and connect ideas.</p>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          {/* Public-only routes (redirect authenticated users to /app/library) */}
+          <Route element={<PublicOnlyRoute />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+          </Route>
 
-      <div className={`connection-badge ${connectionStatus}`}>
-        <strong>Supabase Status:</strong> {statusMessage}
-      </div>
-    </main>
+          {/* Protected routes */}
+          <Route path="/app" element={<ProtectedRoute />}>
+            <Route path="library" element={<Library />} />
+            <Route index element={<Navigate to="/app/library" replace />} />
+          </Route>
+
+          {/* Default fallback */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
 
