@@ -1,52 +1,56 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
 
 export const Library: React.FC = () => {
-  const { user, signOut } = useAuth()
-  const navigate = useNavigate()
-  const [error, setError] = useState<string | null>(null)
-  const [loggingOut, setLoggingOut] = useState(false)
-
-  const displayName = user?.user_metadata?.full_name || user?.email || 'Explorer'
-
-  const handleLogout = async () => {
-    try {
-      setLoggingOut(true)
-      await signOut()
-      navigate('/login', { replace: true })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to log out.'
-      setError(msg)
-      setLoggingOut(false)
-    }
-  }
+  const [activeModal, setActiveModal] = useState<'resource' | 'topic' | null>(null)
 
   return (
-    <div className="app-layout">
-      <header className="app-header">
-        <div className="header-brand">
-          <h1>Curio</h1>
+    <div className="page-view">
+      <header className="page-header">
+        <div className="header-titles">
+          <h1 className="page-title">Your curiosity, organised.</h1>
+          <p className="page-subtitle">Save resources, explore ideas and discover connections.</p>
         </div>
         <div className="header-actions">
-          <span className="user-greeting">Welcome, {displayName}</span>
-          <button onClick={handleLogout} className="btn-secondary" disabled={loggingOut}>
-            {loggingOut ? 'Logging out...' : 'Log Out'}
+          <button className="btn-secondary" onClick={() => setActiveModal('topic')}>
+            Create topic
+          </button>
+          <button className="btn-primary" onClick={() => setActiveModal('resource')}>
+            Add resource
           </button>
         </div>
       </header>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      <section className="empty-state">
+        <div className="empty-icon-wrapper">
+          <span className="empty-symbol">✦</span>
+        </div>
+        <h2 className="empty-heading">Your library is waiting.</h2>
+        <p className="empty-body">Resources you save will appear here.</p>
+      </section>
 
-      <main className="app-content">
-        <div className="placeholder-card">
-          <h2>Resource Library</h2>
-          <p>Your space to explore, understand, and connect ideas.</p>
-          <div className="placeholder-notice">
-            <p>The Resource Library modules will be built here.</p>
+      {/* Placeholder dialogs */}
+      {activeModal && (
+        <div className="modal-backdrop" onClick={() => setActiveModal(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{activeModal === 'resource' ? 'Add Resource' : 'Create Topic'}</h3>
+              <button className="modal-close-btn" onClick={() => setActiveModal(null)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="placeholder-note">
+                <strong>Feature Preview:</strong> {activeModal === 'resource' ? 'Resource importing and URL saving functionality will be built here.' : 'Topic organization structures will be built here.'}
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setActiveModal(null)}>
+                Close
+              </button>
+            </div>
           </div>
         </div>
-      </main>
+      )}
     </div>
   )
 }
