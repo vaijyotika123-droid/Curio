@@ -13,6 +13,23 @@
   --error-text: #9B1C1C;
   --info-bg: #F0F5F2;
   --info-text: #1B3B2B;
+
+  /* Typography */
+  --font-serif: Georgia, 'Times New Roman', serif;
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+
+  /* Application shell layout (overridden in the responsive rules at the bottom) */
+  --sidebar-width: 260px;
+  --mobile-header-height: 60px;
+  --content-max-width: 1040px;
+  --content-padding-x: 2.5rem;
+  --content-padding-y: 3rem;
+
+  /* Keyboard focus */
+  --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--primary);
 }
 
 * {
@@ -50,7 +67,7 @@ body {
 .auth-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 2.5rem;
   width: 100%;
   max-width: 420px;
@@ -73,7 +90,7 @@ body {
 .auth-title {
   margin: 0 0 0.5rem 0;
   font-size: 1.75rem;
-  font-family: Georgia, serif;
+  font-family: var(--font-serif);
   font-weight: 600;
   color: var(--primary);
 }
@@ -106,7 +123,7 @@ body {
   width: 100%;
   padding: 0.75rem;
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.95rem;
   background-color: #FFFFFF;
   color: var(--text-main);
@@ -124,7 +141,7 @@ body {
   color: #FFFFFF;
   border: none;
   padding: 0.75rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
@@ -162,7 +179,7 @@ body {
   padding: 0.75rem 1rem;
   background-color: var(--error-bg);
   border: 1px solid rgba(155, 28, 28, 0.2);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--error-text);
   font-size: 0.875rem;
 }
@@ -171,7 +188,7 @@ body {
   padding: 0.75rem 1rem;
   background-color: var(--info-bg);
   border: 1px solid rgba(27, 59, 43, 0.2);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--info-text);
   font-size: 0.875rem;
 }
@@ -185,69 +202,38 @@ body {
   width: 100%;
 }
 
-.mobile-header {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  background: var(--bg-sidebar);
-  border-bottom: 1px solid var(--border-color);
-  padding: 0 1.25rem;
-  align-items: center;
-  justify-content: space-between;
-  z-index: 40;
-}
-
-.mobile-toggle-btn {
-  background: none;
-  border: none;
-  padding: 0.5rem;
-  cursor: pointer;
-}
-
-.hamburger-icon {
-  display: block;
-  width: 20px;
-  height: 2px;
-  background-color: var(--text-main);
-  position: relative;
-}
-
-.hamburger-icon::before,
-.hamburger-icon::after {
-  content: '';
+/* Skip link: invisible until focused with the keyboard */
+.skip-link {
   position: absolute;
-  width: 20px;
-  height: 2px;
-  background-color: var(--text-main);
-  left: 0;
-}
-
-.hamburger-icon::before { top: -6px; }
-.hamburger-icon::after { top: 6px; }
-
-/* Sidebar Navigation */
-.sidebar {
-  width: 260px;
-  background-color: var(--bg-sidebar);
-  border-right: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  position: fixed;
+  left: -9999px;
   top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 50;
-  transition: transform 0.25s ease-in-out;
+  z-index: 200;
+  background-color: var(--primary);
+  color: #FFFFFF;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-size: 0.875rem;
 }
 
-.sidebar-brand {
-  padding: 1.75rem 1.5rem;
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+}
+
+/* Brand (used in the sidebar and in the mobile top bar) */
+.brand-link {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.brand-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .brand-mark {
@@ -255,7 +241,7 @@ body {
   height: 32px;
   background-color: var(--primary);
   color: #FFFFFF;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -269,7 +255,67 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--primary);
-  font-family: Georgia, serif;
+  font-family: var(--font-serif);
+}
+
+/* Mobile top bar: hidden until the mobile breakpoint */
+.mobile-header {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--mobile-header-height);
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 40;
+}
+
+.mobile-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: var(--text-main);
+  border-radius: var(--radius-sm);
+}
+
+.mobile-toggle-btn:hover {
+  background-color: var(--accent-soft);
+}
+
+.mobile-toggle-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.mobile-toggle-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Sidebar navigation */
+.sidebar {
+  width: var(--sidebar-width);
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+}
+
+.sidebar-brand {
+  padding: 1.75rem 1.5rem;
 }
 
 .sidebar-nav {
@@ -277,23 +323,8 @@ body {
   padding: 0.5rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1.75rem;
-  overflow-y: auto;
-}
-
-.nav-section {
-  display: flex;
-  flex-direction: column;
   gap: 0.25rem;
-}
-
-.nav-section-title {
-  font-size: 0.725rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  font-weight: 600;
-  padding: 0.5rem 0.75rem;
+  overflow-y: auto;
 }
 
 .nav-item {
@@ -301,40 +332,47 @@ body {
   align-items: center;
   gap: 0.75rem;
   padding: 0.625rem 0.75rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-main);
   text-decoration: none;
   font-size: 0.925rem;
   font-weight: 500;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* Hover (inactive items) */
 .nav-item:hover {
-  background-color: rgba(27, 59, 43, 0.05);
+  background-color: rgba(27, 59, 43, 0.07);
 }
 
+.nav-item:hover .nav-icon {
+  color: var(--primary);
+}
+
+/* Active (current page). Declared after hover so it wins when both apply. */
 .nav-item.active {
   background-color: var(--primary);
   color: #FFFFFF;
 }
 
 .nav-item.active .nav-icon {
-  background-color: rgba(255, 255, 255, 0.2);
   color: #FFFFFF;
 }
 
-.text-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background-color: var(--accent-soft);
-  color: var(--text-main);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  font-family: monospace;
+.nav-item.active:hover {
+  background-color: var(--primary-hover);
+}
+
+.nav-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .sidebar-footer {
@@ -343,13 +381,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .user-profile {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .user-avatar {
@@ -369,7 +408,7 @@ body {
 .user-info {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .user-name {
@@ -380,9 +419,12 @@ body {
   text-overflow: ellipsis;
 }
 
-.user-role {
+.user-email {
   font-size: 0.75rem;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn-logout {
@@ -394,6 +436,7 @@ body {
   padding: 0.4rem 0.6rem;
   border-radius: 4px;
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .btn-logout:hover {
@@ -401,20 +444,30 @@ body {
   color: var(--text-main);
 }
 
-/* Main Viewport */
+.btn-logout:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Main content area */
 .main-viewport {
   flex: 1;
-  margin-left: 260px;
+  min-width: 0; /* lets wide children shrink instead of forcing horizontal scroll */
+  margin-left: var(--sidebar-width);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+.main-viewport:focus {
+  outline: none;
+}
+
 .content-container {
-  max-width: 1040px;
+  max-width: var(--content-max-width);
   width: 100%;
   margin: 0 auto;
-  padding: 3rem 2.5rem;
+  padding: var(--content-padding-y) var(--content-padding-x);
 }
 
 /* App Views & Headers */
@@ -442,7 +495,7 @@ body {
 .page-title {
   margin: 0;
   font-size: 2rem;
-  font-family: Georgia, serif;
+  font-family: var(--font-serif);
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--primary);
@@ -466,7 +519,7 @@ body {
   color: #FFFFFF;
   border: 1px solid var(--primary);
   padding: 0.625rem 1.25rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -482,7 +535,7 @@ body {
   color: var(--text-main);
   border: 1px solid var(--border-color);
   padding: 0.625rem 1.25rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -501,7 +554,7 @@ body {
   text-align: center;
   padding: 5rem 2rem;
   border: 1px dashed var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background-color: rgba(255, 255, 255, 0.4);
 }
 
@@ -524,7 +577,7 @@ body {
 .empty-heading {
   margin: 0 0 0.5rem 0;
   font-size: 1.35rem;
-  font-family: Georgia, serif;
+  font-family: var(--font-serif);
   font-weight: 600;
 }
 
@@ -544,14 +597,14 @@ body {
 .placeholder-card {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 2rem;
 }
 
 .placeholder-card h2 {
   margin: 0 0 0.75rem 0;
   font-size: 1.25rem;
-  font-family: Georgia, serif;
+  font-family: var(--font-serif);
   color: var(--primary);
 }
 
@@ -589,7 +642,7 @@ body {
 .modal-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   width: 100%;
   max-width: 460px;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
@@ -607,7 +660,7 @@ body {
 .modal-header h3 {
   margin: 0;
   font-size: 1.15rem;
-  font-family: Georgia, serif;
+  font-family: var(--font-serif);
 }
 
 .modal-close-btn {
@@ -637,24 +690,62 @@ body {
   justify-content: flex-end;
 }
 
-/* Responsive Rules */
+/* ==========================================
+   RESPONSIVE RULES
+   ========================================== */
+
+/* Tablet: a slightly narrower sidebar and tighter content padding */
+@media (max-width: 1024px) {
+  :root {
+    --sidebar-width: 224px;
+    --content-padding-x: 2rem;
+    --content-padding-y: 2.5rem;
+  }
+
+  .sidebar-brand {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .page-title {
+    font-size: 1.75rem;
+  }
+}
+
+/* Mobile: sidebar becomes a slide-in drawer under a top bar.
+   Keep this 768px value in sync with DESKTOP_QUERY in Sidebar.tsx. */
 @media (max-width: 768px) {
+  :root {
+    --content-padding-x: 1.25rem;
+    --content-padding-y: 1.5rem;
+  }
+
   .mobile-header {
     display: flex;
   }
 
   .sidebar {
+    top: var(--mobile-header-height);
+    width: min(280px, 85vw);
     transform: translateX(-100%);
-    top: 60px;
+    /* visibility keeps the closed drawer's links out of the keyboard tab order */
+    visibility: hidden;
+    transition: transform 0.25s ease-in-out, visibility 0s linear 0.25s;
   }
 
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.25s ease-in-out, visibility 0s;
+  }
+
+  /* The mobile top bar already shows the brand */
+  .sidebar-brand {
+    display: none;
   }
 
   .sidebar-backdrop {
     position: fixed;
-    top: 60px;
+    top: var(--mobile-header-height);
     left: 0;
     right: 0;
     bottom: 0;
@@ -664,16 +755,16 @@ body {
 
   .main-viewport {
     margin-left: 0;
-    padding-top: 60px;
-  }
-
-  .content-container {
-    padding: 1.5rem 1.25rem;
+    padding-top: var(--mobile-header-height);
   }
 
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .page-title {
+    font-size: 1.6rem;
   }
 
   .header-actions {
@@ -682,5 +773,13 @@ body {
 
   .header-actions button {
     flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar.open,
+  .nav-item {
+    transition: none;
   }
 }

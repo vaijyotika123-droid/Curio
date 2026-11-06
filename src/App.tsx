@@ -4,6 +4,7 @@ import { ProtectedRoute, PublicOnlyRoute } from './components/ProtectedRoute'
 import { AppLayout } from './components/AppLayout'
 import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
+import { Home } from './pages/Home'
 import { Library } from './pages/Library'
 import { Topics } from './pages/Topics'
 import { Connect } from './pages/Connect'
@@ -25,6 +26,7 @@ function App() {
           {/* Protected routes wrapped in AppLayout */}
           <Route path="/app" element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
+              <Route path="home" element={<Home />} />
               <Route path="library" element={<Library />} />
               <Route path="topics" element={<Topics />} />
               <Route path="connect" element={<Connect />} />
