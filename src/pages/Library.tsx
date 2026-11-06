@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AddResourceModal } from '../components/AddResourceModal';
+import { EditResourceModal } from '../components/EditResourceModal';
 
 interface Resource {
   id: string;
@@ -22,6 +23,10 @@ export const Library: React.FC = () => {
   const [deleting, setDeleting] = useState<boolean>(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [openMenuResourceId, setOpenMenuResourceId] = useState<string | null>(null);
+
+  // Resource editing states
+  const [resourceToEdit, setResourceToEdit] = useState<Resource | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Reusable function for fetching and refreshing resources
   const loadUserResources = async () => {
@@ -108,6 +113,30 @@ export const Library: React.FC = () => {
     };
   }, []);
 
+  // Clear the success message automatically after a few seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timeoutId = window.setTimeout(() => setSuccessMessage(null), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [successMessage]);
+
+  // Open the edit form for a resource
+  const openEditResource = (resource: Resource) => {
+    setResourceToEdit(resource);
+    setOpenMenuResourceId(null);
+  };
+
+  // After a successful save, update just that card in the list
+  const handleResourceSaved = (updated: { id: string; title: string }) => {
+    setResources((currentResources) =>
+      currentResources.map((resource) =>
+        resource.id === updated.id ? { ...resource, title: updated.title } : resource
+      )
+    );
+    setResourceToEdit(null);
+    setSuccessMessage('Resource updated.');
+  };
+
   // Open the delete confirmation dialog
   const confirmDeleteResource = (resource: Resource) => {
     setResourceToDelete(resource);
@@ -193,6 +222,16 @@ export const Library: React.FC = () => {
 
       {/* Main Content Area */}
       <section className="library-content" style={{ marginTop: '2rem' }}>
+        {successMessage && (
+          <div
+            className="auth-info-alert"
+            role="status"
+            style={{ marginBottom: '1.25rem' }}
+          >
+            {successMessage}
+          </div>
+        )}
+
         {isLoading ? (
           <div
             className="loading-state"
@@ -384,6 +423,25 @@ export const Library: React.FC = () => {
                   >
                     <button
                       type="button"
+                      onClick={() => openEditResource(resource)}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#1e293b',
+                        padding: '0.65rem 0.75rem',
+                        borderRadius: '0.35rem',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                      }}
+                    >
+                      Edit resource
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => confirmDeleteResource(resource)}
                       style={{
                         display: 'block',
@@ -454,6 +512,16 @@ export const Library: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Resource Modal (remounted per resource so its form state starts fresh) */}
+      {resourceToEdit && (
+        <EditResourceModal
+          key={resourceToEdit.id}
+          resource={resourceToEdit}
+          onClose={() => setResourceToEdit(null)}
+          onSaved={handleResourceSaved}
+        />
       )}
 
       {/* Delete confirmation dialog */}
