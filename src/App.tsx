@@ -1,3 +1,4 @@
+
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { ProtectedRoute, PublicOnlyRoute } from './components/ProtectedRoute'
@@ -6,6 +7,7 @@ import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
 import { Home } from './pages/Home'
 import { Library } from './pages/Library'
+import { ResourceDetail } from './pages/ResourceDetail'
 import { Topics } from './pages/Topics'
 import { Connect } from './pages/Connect'
 import { Challenge } from './pages/Challenge'
@@ -17,17 +19,19 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public-only routes */}
           <Route element={<PublicOnlyRoute />}>
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
           </Route>
 
-          {/* Protected routes wrapped in AppLayout */}
           <Route path="/app" element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="home" element={<Home />} />
               <Route path="library" element={<Library />} />
+              <Route
+                path="library/:resourceId"
+                element={<ResourceDetail />}
+              />
               <Route path="topics" element={<Topics />} />
               <Route path="connect" element={<Connect />} />
               <Route path="challenge" element={<Challenge />} />
@@ -36,7 +40,6 @@ function App() {
             </Route>
           </Route>
 
-          {/* Default fallback */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </AuthProvider>
