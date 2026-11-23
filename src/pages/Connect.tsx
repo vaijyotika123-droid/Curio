@@ -197,41 +197,50 @@ export const Connect: React.FC = () => {
     }
   }
 
-  useEffect(() => {
-    let active = true
+  
+useEffect(() => {
+  let active = true
 
-    const loadResources = async () => {
-      try {
-        const { data, error: fetchError } = await supabase
-          .from('resources')
-          .select('id, title, source_url, input_method')
-          .order('created_at', { ascending: false })
+  const loadResources = async () => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('resources')
+        .select('id, title, source_url, input_method')
+        .order('created_at', { ascending: false })
 
-        if (fetchError) throw fetchError
+      if (fetchError) throw fetchError
 
-        if (active) {
-          setResources((data || []) as Resource[])
-        }
-      } catch (err) {
-        if (active) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : 'Unable to load your resources.'
-          )
-        }
-      } finally {
-        if (active) setLoading(false)
+      if (active) {
+        setResources((data || []) as Resource[])
+      }
+    } catch (err) {
+      if (active) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to load your resources.'
+        )
+      }
+    } finally {
+      if (active) {
+        setLoading(false)
       }
     }
+  }
 
-    void loadResources()
-    void loadHistory()
+  void loadResources()
 
-    return () => {
-      active = false
+  const historyTimer = window.setTimeout(() => {
+    if (active) {
+      void loadHistory()
     }
-  }, [])
+  }, 0)
+
+  return () => {
+    active = false
+    window.clearTimeout(historyTimer)
+  }
+}, [])
 
   const clearResults = () => {
     setResult(null)
