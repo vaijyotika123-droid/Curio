@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { ResourceQuiz } from '../components/ResourceQuiz'
 import {
   fetchTopics,
   fetchResourceTopicLinks,
@@ -11,9 +12,22 @@ import {
   type EditableResource,
 } from '../components/EditResourceModal'
 
+interface ResourceOverview {
+  quickOverview: string
+  detailedSummary: string
+  keyTakeaways: string[]
+  evidence: {
+    claim: string
+    sourceExcerpt: string
+  }[]
+}
+
 interface ResourceDetailData extends EditableResource {
   created_at: string
+  ai_analysis_status: string | null
 }
+
+const POLL_INTERVAL_MS = 5000
 
 export const ResourceDetail: React.FC = () => {
   const { resourceId } = useParams<{ resourceId: string }>()
@@ -22,6 +36,8 @@ export const ResourceDetail: React.FC = () => {
   const [resource, setResource] = useState<ResourceDetailData | null>(null)
   const [contentText, setContentText] = useState<string | null>(null)
   const [assignedTopics, setAssignedTopics] = useState<string[]>([])
+  const [aiOverview, setAiOverview] = useState<ResourceOverview | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -43,6 +59,8 @@ export const ResourceDetail: React.FC = () => {
 
       setLoading(true)
       setError(null)
+      setAiError(null)
+      setAiOverview(null)
 
       try {
         const {
@@ -51,14 +69,18 @@ export const ResourceDetail: React.FC = () => {
         } = await supabase.auth.getUser()
 
         if (userError || !user) {
-          throw new Error('Your session could not be verified. Please sign in again.')
+          throw new Error(
+            'Your session could not be verified. Please sign in again.'
+          )
         }
 
         const [resourceResult, topicData, resourceTopicLinks] =
           await Promise.all([
             supabase
               .from('resources')
-              .select('id, title, input_method, source_url, created_at')
+              .select(
+                'id, title, input_method, source_url, created_at, ai_analysis_status'
+              )
               .eq('id', resourceId)
               .eq('user_id', user.id)
               .maybeSingle(),
@@ -101,6 +123,42 @@ export const ResourceDetail: React.FC = () => {
           savedContent = contentData.content_text
         }
 
+        const { data: outputLinks, error: linkError } = await supabase
+          .from('ai_output_resources')
+          .select('output_id')
+          .eq('resource_id', typedResource.id)
+          .eq('user_id', user.id)
+
+        let overview: ResourceOverview | null = null
+
+        if (linkError) {
+          console.error('Error loading AI output links:', linkError)
+          if (!cancelled) {
+            setAiError('Unable to load the AI overview. Please try again.')
+          }
+        } else if (outputLinks && outputLinks.length > 0) {
+          const outputIds = outputLinks.map((link) => link.output_id)
+
+          const { data: outputData, error: outputError } = await supabase
+            .from('ai_outputs')
+            .select('output_data, created_at')
+            .in('id', outputIds)
+            .eq('user_id', user.id)
+            .eq('feature_type', 'overview')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (outputError) {
+            console.error('Error loading AI overview:', outputError)
+            if (!cancelled) {
+              setAiError('Unable to load the AI overview. Please try again.')
+            }
+          } else if (outputData?.output_data) {
+            overview = outputData.output_data as ResourceOverview
+          }
+        }
+
         const topicNamesById = new Map(
           topicData.map((topic) => [topic.id, topic.name])
         )
@@ -115,6 +173,7 @@ export const ResourceDetail: React.FC = () => {
         setResource(typedResource)
         setContentText(savedContent)
         setAssignedTopics(resourceTopicNames)
+        setAiOverview(overview)
       } catch (err: unknown) {
         if (cancelled) return
 
@@ -137,6 +196,114 @@ export const ResourceDetail: React.FC = () => {
       cancelled = true
     }
   }, [resourceId, reloadKey])
+
+  useEffect(() => {
+    if (
+      !resourceId ||
+      !resource ||
+      aiOverview ||
+      aiError ||
+      resource.ai_analysis_status === 'failed'
+    ) {
+      return
+    }
+
+    let cancelled = false
+    let polling = false
+
+    const pollAiOverview = async () => {
+      if (polling || cancelled) return
+
+      polling = true
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
+
+        if (userError || !user || cancelled) return
+
+        const { data: resourceStatus, error: statusError } = await supabase
+          .from('resources')
+          .select('ai_analysis_status')
+          .eq('id', resourceId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (statusError) {
+          throw statusError
+        }
+
+        if (!resourceStatus || cancelled) return
+
+        const nextStatus = resourceStatus.ai_analysis_status
+
+        if (nextStatus !== resource.ai_analysis_status) {
+          setResource((current) =>
+            current
+              ? { ...current, ai_analysis_status: nextStatus }
+              : current
+          )
+        }
+
+        if (nextStatus !== 'completed') return
+
+        const { data: outputLinks, error: linkError } = await supabase
+          .from('ai_output_resources')
+          .select('output_id')
+          .eq('resource_id', resourceId)
+          .eq('user_id', user.id)
+
+        if (linkError) {
+          throw linkError
+        }
+
+        if (!outputLinks || outputLinks.length === 0) return
+
+        const outputIds = outputLinks.map((link) => link.output_id)
+
+        const { data: outputData, error: outputError } = await supabase
+          .from('ai_outputs')
+          .select('output_data, created_at')
+          .in('id', outputIds)
+          .eq('user_id', user.id)
+          .eq('feature_type', 'overview')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (outputError) {
+          throw outputError
+        }
+
+        if (cancelled) return
+
+        if (outputData?.output_data) {
+          setAiOverview(outputData.output_data as ResourceOverview)
+          setAiError(null)
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          console.error('Error checking AI overview status:', err)
+        }
+      } finally {
+        polling = false
+      }
+    }
+
+    // Check immediately, then continue polling every five seconds.
+    void pollAiOverview()
+
+    const intervalId = window.setInterval(() => {
+      void pollAiOverview()
+    }, POLL_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [resourceId, resource, aiOverview, aiError])
 
   const handleResourceSaved = () => {
     setIsEditing(false)
@@ -330,6 +497,229 @@ export const ResourceDetail: React.FC = () => {
           </div>
         </header>
 
+        {/* AI Overview — primary learning experience */}
+        <section
+          aria-label="AI Overview"
+          style={{
+            border: '1px solid #c7d2fe',
+            borderRadius: '0.75rem',
+            padding: '1.5rem',
+            backgroundColor: '#fff',
+            marginBottom: '1.25rem',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '1rem',
+              flexWrap: 'wrap',
+              marginBottom: '1.25rem',
+            }}
+          >
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, margin: 0 }}>
+              AI Overview
+            </h2>
+
+            <span
+              role="status"
+              style={{
+                fontSize: '0.75rem',
+                color: '#475569',
+                backgroundColor: '#f1f5f9',
+                padding: '0.3rem 0.65rem',
+                borderRadius: '999px',
+                fontWeight: 600,
+              }}
+            >
+              {aiOverview
+                ? 'Ready'
+                : resource.ai_analysis_status === 'completed'
+                  ? 'Preparing overview'
+                  : resource.ai_analysis_status === 'processing'
+                    ? 'Generating'
+                    : resource.ai_analysis_status === 'queued' ||
+                        resource.ai_analysis_status === 'pending'
+                      ? 'Queued'
+                      : resource.ai_analysis_status === 'failed'
+                        ? 'Failed'
+                        : 'Not available'}
+            </span>
+          </div>
+
+          {aiError ? (
+            <p role="alert" style={{ color: '#b91c1c', lineHeight: 1.6 }}>
+              {aiError}
+            </p>
+          ) : aiOverview ? (
+            <>
+              <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.5rem' }}>
+                Quick overview
+              </h3>
+
+              <p
+                style={{
+                  color: '#334155',
+                  lineHeight: 1.8,
+                  margin: '0 0 1.25rem',
+                }}
+              >
+                {aiOverview.quickOverview}
+              </p>
+
+              <details
+                style={{
+                  borderTop: '1px solid #e2e8f0',
+                  paddingTop: '1rem',
+                }}
+              >
+                <summary
+                  style={{
+                    cursor: 'pointer',
+                    color: '#4f46e5',
+                    fontWeight: 600,
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  Explore detailed analysis
+                </summary>
+
+                <div style={{ paddingTop: '1.25rem' }}>
+                  <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.5rem' }}>
+                    Detailed summary
+                  </h3>
+
+                  <p
+                    style={{
+                      color: '#334155',
+                      lineHeight: 1.8,
+                      whiteSpace: 'pre-wrap',
+                      margin: '0 0 1.5rem',
+                    }}
+                  >
+                    {aiOverview.detailedSummary}
+                  </p>
+
+                  <h3 style={{ fontSize: '0.95rem', margin: '0 0 0.75rem' }}>
+                    Key takeaways
+                  </h3>
+
+                  <ul
+                    style={{
+                      color: '#334155',
+                      lineHeight: 1.8,
+                      paddingLeft: '1.25rem',
+                      margin: '0 0 1.5rem',
+                    }}
+                  >
+                    {aiOverview.keyTakeaways.map((takeaway, index) => (
+                      <li key={index} style={{ marginBottom: '0.5rem' }}>
+                        {takeaway}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {aiOverview.evidence?.length > 0 && (
+                    <>
+                      <h3
+                        style={{
+                          fontSize: '0.95rem',
+                          margin: '0 0 0.75rem',
+                        }}
+                      >
+                        Source evidence
+                      </h3>
+
+                      <div style={{ display: 'grid', gap: '0.75rem' }}>
+                        {aiOverview.evidence.map((item, index) => (
+                          <div
+                            key={index}
+                            style={{
+                              padding: '0.875rem',
+                              borderRadius: '0.5rem',
+                              backgroundColor: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                            }}
+                          >
+                            <p
+                              style={{
+                                margin: '0 0 0.5rem',
+                                color: '#334155',
+                                fontWeight: 600,
+                                lineHeight: 1.6,
+                              }}
+                            >
+                              {item.claim}
+                            </p>
+
+                            <p
+                              style={{
+                                margin: 0,
+                                color: '#64748b',
+                                fontSize: '0.875rem',
+                                lineHeight: 1.7,
+                              }}
+                            >
+                              "{item.sourceExcerpt}"
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </details>
+            </>
+          ) : (
+            <p style={{ color: '#64748b', lineHeight: 1.7, margin: 0 }}>
+              {resource.ai_analysis_status === 'processing'
+                ? 'Curio is analysing your resource and preparing its key insights. Your overview will appear here automatically. You can explore the quiz below while you wait.'
+                : resource.ai_analysis_status === 'queued' ||
+                    resource.ai_analysis_status === 'pending'
+                  ? 'Your resource is in the analysis queue. Curio will prepare your overview automatically. In the meantime, you can try the quiz below.'
+                  : resource.ai_analysis_status === 'completed'
+                    ? 'Your analysis is complete. Loading your overview...'
+                    : resource.ai_analysis_status === 'failed'
+                      ? 'Curio could not generate an overview for this resource.'
+                      : 'An AI overview is not available for this resource yet.'}
+            </p>
+          )}
+        </section>
+
+        {/* Quiz — independent secondary learning activity */}
+        <section
+          aria-label="Test your understanding"
+          style={{ marginBottom: '1.25rem' }}
+        >
+          <div style={{ marginBottom: '0.875rem' }}>
+            <h2
+              style={{
+                fontSize: '1.125rem',
+                fontWeight: 700,
+                margin: '0 0 0.375rem',
+              }}
+            >
+              Test your understanding
+            </h2>
+
+            <p
+              style={{
+                color: '#64748b',
+                fontSize: '0.875rem',
+                lineHeight: 1.6,
+                margin: 0,
+              }}
+            >
+              Already familiar with this resource? Take a quiz to check
+              what you've learned. You don't need to wait for the AI overview.
+            </p>
+          </div>
+
+          <ResourceQuiz resourceId={resource.id} />
+        </section>
+
+        {/* Original source content */}
         <section
           style={{
             border: '1px solid #e2e8f0',
@@ -384,6 +774,7 @@ export const ResourceDetail: React.FC = () => {
           )}
         </section>
 
+        {/* Assigned topics */}
         <section
           style={{
             border: '1px solid #e2e8f0',
