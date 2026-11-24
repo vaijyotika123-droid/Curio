@@ -2,7 +2,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 
-import { GeminiProvider } from "../_shared/ai/gemini-provider.ts";
 import { QUIZ_SYSTEM_PROMPT } from "../_shared/ai/prompts.ts";
 import type { AIRequest, AIResponse } from "../_shared/ai/provider.ts";
 
@@ -19,7 +18,14 @@ const PROMPT_VERSION = "resource-quiz-v1";
 const SCHEMA_VERSION = "1";
 
 const PRIMARY_MODEL = "gemini-3.5-flash-lite";
-const FALLBACK_MODEL = "gemini-3.1-flash-lite";
+const FALLBACK_MODEL = "gemini-3.8-flash";
+
+// Quiz-specific limits. Other AI features are unaffected.
+const MODEL_TIMEOUT_MS = 18_000;
+const RETRY_DELAY_MS = 750;
+const RETRYABLE_STATUS_CODES = new Set([
+  408, 429, 500, 502, 503, 504,
+]);
 
 type QuizQuestion = {
   id: string;
@@ -202,27 +208,203 @@ async function createFingerprint(
     .join("");
 }
 
+class GeminiTemporaryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GeminiTemporaryError";
+  }
+}
+
+function isTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+
+  return (
+    error.name === "TimeoutError" ||
+    error.name === "AbortError" ||
+    /timed out|timeout/i.test(error.message)
+  );
+}
+
+async function callGemini(
+  model: string,
+  request: AIRequest,
+  timeoutMs: number
+): Promise<AIResponse> {
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  const systemInstruction = request.messages
+    .filter((message) => message.role === "system")
+    .map((message) => message.content)
+    .join("\n\n");
+
+  const userContent = request.messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content)
+    .join("\n\n");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: systemInstruction }],
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: userContent }],
+            },
+          ],
+          generationConfig: {
+            maxOutputTokens: request.maxTokens ?? 2500,
+            responseMimeType: "application/json",
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const details = await response.text();
+      const message =
+        `Gemini API request failed (${response.status}): ${details}`;
+
+      if (RETRYABLE_STATUS_CODES.has(response.status)) {
+        throw new GeminiTemporaryError(message);
+      }
+
+      throw new Error(message);
+    }
+
+    const result = await response.json();
+    const candidate = result.candidates?.[0];
+    const finishReason = candidate?.finishReason;
+
+    const generatedText = candidate?.content?.parts
+      ?.map((part: { text?: string }) => part.text ?? "")
+      .join("");
+
+    if (finishReason === "MAX_TOKENS") {
+      throw new Error(
+        "Gemini response ended because the output token limit was reached."
+      );
+    }
+
+    if (
+      finishReason === "SAFETY" ||
+      result.promptFeedback?.blockReason
+    ) {
+      throw new Error(
+        "Gemini blocked the response due to safety restrictions."
+      );
+    }
+
+    if (!generatedText || finishReason !== "STOP") {
+      throw new Error(
+        `Gemini response did not finish normally. Finish reason: ${
+          finishReason ?? "UNKNOWN"
+        }.`
+      );
+    }
+
+    console.log(`Gemini ${model} completed successfully.`);
+
+    return {
+      text: generatedText,
+      provider: "gemini",
+      model,
+    };
+  } catch (error) {
+    if (controller.signal.aborted || isTimeoutError(error)) {
+      throw new GeminiTemporaryError(
+        `Gemini ${model} timed out.`
+      );
+    }
+
+    if (
+      error instanceof TypeError &&
+      /fetch|network/i.test(error.message)
+    ) {
+      throw new GeminiTemporaryError(
+        `Gemini ${model} network error: ${error.message}`
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function generateQuizWithFallback(
   request: AIRequest
 ): Promise<AIResponse> {
-  try {
-    return await new GeminiProvider(PRIMARY_MODEL).generate(request);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : String(error);
+  const models = [PRIMARY_MODEL, FALLBACK_MODEL];
 
-    // Fallback only for temporary service unavailability.
-    if (!/Gemini API request failed \(503\)/.test(message)) {
-      throw error;
+  for (let index = 0; index < models.length; index++) {
+    const model = models[index];
+    const maxAttempts = index === 0 ? 2 : 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(
+          `Quiz Gemini ${model}: attempt ${attempt}/${maxAttempts}`
+        );
+
+        return await callGemini(
+          model,
+          request,
+          MODEL_TIMEOUT_MS
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+
+        console.warn(
+          `Quiz Gemini ${model} failed: ${message}`
+        );
+
+        // Do not retry permanent API errors or invalid responses.
+        if (!(error instanceof GeminiTemporaryError)) {
+          throw error;
+        }
+
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAY_MS)
+          );
+          continue;
+        }
+
+        if (index < models.length - 1) {
+          console.warn(
+            `Switching quiz generation to fallback model ${FALLBACK_MODEL}.`
+          );
+          break;
+        }
+
+        throw new Error(
+  "Gemini is temporarily unavailable. Please try generating the quiz again shortly.",
+  { cause: error }
+);
+      }
     }
-
-    console.warn(
-      `Primary model ${PRIMARY_MODEL} unavailable. ` +
-      `Trying fallback ${FALLBACK_MODEL}.`
-    );
-
-    return await new GeminiProvider(FALLBACK_MODEL).generate(request);
   }
+
+  throw new Error("Quiz generation could not be completed.");
 }
 
 serve(async (req: Request) => {
@@ -308,7 +490,6 @@ serve(async (req: Request) => {
     }
 
     const resourceId = body.resource_id;
-
     const uuidPattern =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -375,6 +556,7 @@ serve(async (req: Request) => {
 Title: ${resource.title}
 
 Resource content:
+
 ${resourceContent.content_text}`,
         },
       ],

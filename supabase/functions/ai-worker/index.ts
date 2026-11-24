@@ -16,6 +16,9 @@ type Job = {
 const PROMPT_VERSION = "resource-overview-v1";
 const SCHEMA_VERSION = "1";
 
+const PRIMARY_MODEL = "gemini-3.5-flash-lite";
+const FALLBACK_MODEL = "gemini-3.8-flash";
+
 function respond(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -62,6 +65,41 @@ async function createFingerprint(
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function analyzeWithFallback(
+  title: string,
+  content: string
+): ReturnType<typeof analyzeResource> {
+  try {
+    const provider = new GeminiProvider(PRIMARY_MODEL);
+
+    return await analyzeResource(
+      provider,
+      title,
+      content
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
+
+    if (!/\b503\b/.test(message)) {
+      throw error;
+    }
+
+    console.warn(
+      `Primary Gemini model ${PRIMARY_MODEL} returned 503. Trying ${FALLBACK_MODEL}.`,
+      message
+    );
+
+    const fallbackProvider = new GeminiProvider(FALLBACK_MODEL);
+
+    return await analyzeResource(
+      fallbackProvider,
+      title,
+      content
+    );
+  }
 }
 
 serve(async (req: Request) => {
@@ -148,10 +186,9 @@ serve(async (req: Request) => {
     }
 
     const content = resourceContent.content_text;
-    const provider = new GeminiProvider();
 
-    const result = await analyzeResource(
-      provider,
+    // Try the primary model first, then fallback on HTTP 503.
+    const result = await analyzeWithFallback(
       resource.title,
       content
     );

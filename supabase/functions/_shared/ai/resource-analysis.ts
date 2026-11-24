@@ -24,13 +24,103 @@ function parseAndValidateOverview(text: string): ResourceOverview {
   return validateResourceOverview(parsedResponse);
 }
 
-function getInvalidEvidence(
+// Match quotations against the original source while allowing
+// harmless whitespace differences. Return the original source text.
+function findVerifiedExcerpt(
+  excerpt: string,
+  content: string
+): string | null {
+  if (!excerpt.trim()) {
+    return null;
+  }
+
+  const exactIndex = content.indexOf(excerpt);
+
+  if (exactIndex !== -1) {
+    return content.slice(
+      exactIndex,
+      exactIndex + excerpt.length
+    );
+  }
+
+  const normalizedExcerpt = excerpt
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const normalizedContent = content.replace(/\s+/g, " ");
+
+  const normalizedIndex =
+    normalizedContent.indexOf(normalizedExcerpt);
+
+  if (normalizedIndex === -1) {
+    return null;
+  }
+
+  // Recover the original source substring, preserving its formatting.
+  const sourceCharacters: number[] = [];
+  let previousWasWhitespace = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const character = content[i];
+    const isWhitespace = /\s/.test(character);
+
+    if (isWhitespace) {
+      if (!previousWasWhitespace) {
+        sourceCharacters.push(i);
+      }
+    } else {
+      sourceCharacters.push(i);
+    }
+
+    previousWasWhitespace = isWhitespace;
+  }
+
+  const start = sourceCharacters[normalizedIndex];
+  const endPosition =
+    normalizedIndex + normalizedExcerpt.length - 1;
+  const end = sourceCharacters[endPosition];
+
+  if (start === undefined || end === undefined) {
+    return null;
+  }
+
+  return content.slice(start, end + 1);
+}
+
+function verifyEvidence(
   overview: ResourceOverview,
   content: string
-): string[] {
-  return overview.evidence
-    .filter((item) => !content.includes(item.sourceExcerpt))
-    .map((item) => item.sourceExcerpt);
+): {
+  overview: ResourceOverview;
+  invalidEvidence: string[];
+} {
+  const validEvidence: ResourceOverview["evidence"] = [];
+  const invalidEvidence: string[] = [];
+
+  for (const item of overview.evidence) {
+    const verifiedExcerpt = findVerifiedExcerpt(
+      item.sourceExcerpt,
+      content
+    );
+
+    if (verifiedExcerpt === null) {
+      invalidEvidence.push(item.sourceExcerpt);
+      continue;
+    }
+
+    validEvidence.push({
+      ...item,
+      sourceExcerpt: verifiedExcerpt,
+    });
+  }
+
+  return {
+    overview: {
+      ...overview,
+      evidence: validEvidence,
+    },
+    invalidEvidence,
+  };
 }
 
 export async function analyzeResource(
@@ -49,7 +139,7 @@ Title: ${title}
 Resource content:
 ${content}`;
 
-  // First attempt: generate the complete overview.
+  // Generate the initial AI overview.
   const response = await provider.generate({
     messages: [
       {
@@ -65,22 +155,31 @@ ${content}`;
     maxTokens: 6000,
   });
 
-  let overview = parseAndValidateOverview(response.text);
-  let invalidEvidence = getInvalidEvidence(overview, content);
+  const generatedOverview =
+    parseAndValidateOverview(response.text);
 
-  if (invalidEvidence.length === 0) {
+  const initialVerification = verifyEvidence(
+    generatedOverview,
+    content
+  );
+
+  if (initialVerification.invalidEvidence.length === 0) {
     return {
-      overview,
+      overview: initialVerification.overview,
       provider: response.provider,
       model: response.model,
     };
   }
 
-  console.warn("AI evidence verification failed. Attempting correction.", {
-    invalidExcerptCount: invalidEvidence.length,
-  });
+  console.warn(
+    "AI evidence verification failed. Attempting correction.",
+    {
+      invalidExcerptCount:
+        initialVerification.invalidEvidence.length,
+    }
+  );
 
-  // Second attempt: ask Gemini to correct the invalid quotations.
+  // Ask Gemini to correct quotations that could not be verified.
   const correctionResponse = await provider.generate({
     messages: [
       {
@@ -92,21 +191,20 @@ ${content}`;
         content: `${resourceMessage}
 
 Your previous response contained evidence excerpts that did not
-match the original resource character for character.
+match the original resource.
 
 Previous response:
-${JSON.stringify(overview)}
+${JSON.stringify(generatedOverview)}
 
 Invalid excerpts:
-${JSON.stringify(invalidEvidence)}
+${JSON.stringify(initialVerification.invalidEvidence)}
 
 CORRECTION INSTRUCTIONS:
 - Preserve the original overview, summary, and takeaways
   unless a correction is necessary for factual accuracy.
 - Replace invalid sourceExcerpt values with exact,
   contiguous quotations copied from the resource.
-- Do not paraphrase, normalize, shorten with ellipses,
-  or change punctuation inside quotations.
+- Do not paraphrase or invent quotations.
 - If a claim has no verifiable excerpt, remove that
   evidence item.
 - Return the complete corrected JSON object.
@@ -117,19 +215,28 @@ CORRECTION INSTRUCTIONS:
     maxTokens: 6000,
   });
 
-  overview = parseAndValidateOverview(correctionResponse.text);
-  invalidEvidence = getInvalidEvidence(overview, content);
+  const correctedOverview =
+    parseAndValidateOverview(correctionResponse.text);
 
-  if (invalidEvidence.length > 0) {
-    throw new Error(
-      "AI evidence verification failed after one correction attempt."
+  const correctedVerification = verifyEvidence(
+    correctedOverview,
+    content
+  );
+
+  if (correctedVerification.invalidEvidence.length > 0) {
+    console.warn(
+      "Removing unverified evidence excerpts after correction.",
+      {
+        removedCount:
+          correctedVerification.invalidEvidence.length,
+      }
     );
+  } else {
+    console.log("AI evidence correction succeeded.");
   }
 
-  console.log("AI evidence correction succeeded.");
-
   return {
-    overview,
+    overview: correctedVerification.overview,
     provider: correctionResponse.provider,
     model: correctionResponse.model,
   };

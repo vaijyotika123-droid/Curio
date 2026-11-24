@@ -1,6 +1,5 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 type Database = {
@@ -299,6 +298,7 @@ async function readLimitedResponse(
     }
 
     result += decoder.decode();
+
     return result;
   } finally {
     reader.releaseLock();
@@ -307,8 +307,6 @@ async function readLimitedResponse(
 
 /**
  * Normalize an article title for matching.
- *
- * Ignores capitalization, punctuation, and extra whitespace.
  */
 function normalizeArticleTitle(value: string): string {
   return value
@@ -322,15 +320,6 @@ function normalizeArticleTitle(value: string): string {
 /**
  * Conservatively isolate an intended article from a
  * multi-article PDF extraction.
- *
- * Safety rules:
- * - Only process PDF URLs.
- * - Require an exact normalized title match.
- * - Require a unique target heading.
- * - Recognize the next article only after a journal-style
- *   "Supporting Online Material" section.
- * - Reject suspiciously short cleaned results.
- * - Never trim ordinary webpages.
  *
  * If the boundaries cannot be identified confidently,
  * return the original content unchanged.
@@ -353,6 +342,7 @@ function cleanMultiArticlePdf(
     console.warn(
       "PDF cleanup skipped: missing or insufficient title.",
     );
+
     return content;
   }
 
@@ -423,6 +413,7 @@ function cleanMultiArticlePdf(
     console.warn(
       "PDF cleanup skipped: next article boundary not found.",
     );
+
     return content;
   }
 
@@ -432,6 +423,7 @@ function cleanMultiArticlePdf(
     console.warn(
       "PDF cleanup skipped: cleaned result too short.",
     );
+
     return content;
   }
 
@@ -537,6 +529,39 @@ async function extractWithJina(
   if (content.length < 100) {
     throw new Error(
       "Not enough readable content could be extracted from this webpage.",
+    );
+  }
+
+  // NEW: Reject security-verification pages returned
+  // instead of actual article content.
+  const normalizedContent = content
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  const isSecurityVerificationPage =
+    (
+      normalizedContent.includes(
+        "performing security verification",
+      ) &&
+      normalizedContent.includes("malicious bots")
+    ) ||
+    (
+      normalizedContent.includes("checking your browser") &&
+      normalizedContent.includes("before accessing")
+    ) ||
+    (
+      normalizedContent.includes("verify you are human") &&
+      normalizedContent.includes("security")
+    );
+
+  if (isSecurityVerificationPage) {
+    console.warn("Blocked webpage detected during extraction.", {
+      hostname: new URL(safeUrl).hostname,
+      extractedCharacters: content.length,
+    });
+
+    throw new Error(
+      "This website requires security verification, so Curio could not extract the article. Please try another URL.",
     );
   }
 
@@ -791,6 +816,7 @@ Deno.serve(async (req: Request) => {
     });
 
     // Extract article content through Jina Reader.
+    // Blocked security pages are rejected inside extractWithJina.
     const extracted = await extractWithJina(
       safeUrl,
       jinaApiKey,
